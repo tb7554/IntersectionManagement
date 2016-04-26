@@ -3,7 +3,7 @@ import os, sys
 from scipy.stats.mstats_basic import tmax
 
 os.environ["SUMO_HOME"] = "/sumo" # Home directory, stops SUMO using slow web lookups for XML files
-os.environ["SUMO_BINARY"] = "/usr/local/bin/sumo-gui" # binary for SUMO simulations
+os.environ["SUMO_BINARY"] = "/usr/local/bin/sumo" # binary for SUMO simulations
  
 def getOpenPort():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -204,13 +204,14 @@ class inersectionControllerContainer:
         
     def addIC(self, IC):
         None
-        
+
 if __name__ == "__main__":
     
     import socket # to execute the getOpenPort() function
     import traci # SUMO API
     import subprocess
     import numpy as np
+    from sumolib import net
     
     # Input arguments
     netFile_filepath = "netFiles/grid.net.xml" #sys.argv[1]
@@ -219,6 +220,18 @@ if __name__ == "__main__":
     tripInfoOutput_filepath = "tripsoutput.xml"
     traciPort = getOpenPort()
     
+    sln = net.readNet(netFile_filepath)
+    
+    TLS  = sln._tlss
+    
+    cons = TLS[1]._connections
+    
+    for con in cons:
+        print(con[0].getID(), con[1].getID(), con[2])
+        
+    
+    
+    """
     # if guiOn: sumoBinary += "-gui" Need an options parser to add this, currently just setting gui to default
     sumoCommand = ("%s -n %s -r %s --step-length %.2f --tripinfo-output %s --remote-port %d --no-step-log" % \
                    (os.environ["SUMO_BINARY"], netFile_filepath, routeFile_filepath, stepLength, tripInfoOutput_filepath, traciPort))
@@ -247,4 +260,4 @@ if __name__ == "__main__":
         intersectionController_1.update(stepLength)
               
         step += stepLength
-    
+    """
