@@ -1,3 +1,4 @@
+*.pyc
 traci/
 .settings/
 SimpleT/
@@ -7,3 +8,4 @@ sumolib/
 traci_tls/
 tripsoutput.xml
 .gitignore
+*.ipynb
