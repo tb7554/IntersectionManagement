@@ -172,26 +172,26 @@ class TLjunction:
                         light_settings_matrix[ii][jj] = 'r'
                         L[ii][jj] = 0
                     elif d_row == "s" and d_col == "r":
-                        light_settings_matrix[ii][jj] = 'g'
-                        L[ii][jj] = 1
+                        light_settings_matrix[ii][jj] = 'r'
+                        L[ii][jj] = 0
                     elif d_row == "s" and d_col == "l":
-                        light_settings_matrix[ii][jj] = 'g'
-                        L[ii][jj] = 1
+                        light_settings_matrix[ii][jj] = 'r'
+                        L[ii][jj] = 0
                     elif d_row == "r" and d_col == "s":
-                        light_settings_matrix[ii][jj] = 'G'
-                        L[ii][jj] = 1
+                        light_settings_matrix[ii][jj] = 'r'
+                        L[ii][jj] = 0
                     elif d_row == 'r' and d_col == 'l':
-                        light_settings_matrix[ii][jj] = 'g'
-                        L[ii][jj] = 1
+                        light_settings_matrix[ii][jj] = 'r'
+                        L[ii][jj] = 0
                     elif d_row == "l" and d_col == "s":
-                        light_settings_matrix[ii][jj] = 'G'
-                        L[ii][jj] = 1
+                        light_settings_matrix[ii][jj] = 'r'
+                        L[ii][jj] = 0
                     elif d_row == 'l' and d_col == 'l':
                         light_settings_matrix[ii][jj] = 'r'
                         L[ii][jj] = 0
                     elif d_row == 'l' and d_col =='r':
-                        light_settings_matrix[ii][jj] = 'G'
-                        L[ii][jj] = 1
+                        light_settings_matrix[ii][jj] = 'r'
+                        L[ii][jj] = 0
                     else:
                         print("Forgot case when d_row %s and d_col %s" % (d_row, d_col))
                 else:
@@ -419,12 +419,12 @@ if __name__ == "__main__":
     TLlogic = []
     TLjunctions = []
     TLconnections = []
-    
+
     for item in netRoot:
         
         if item.tag == "tlLogic" : TLlogic.append(item)
         if item.tag == "junction" and item.attrib["type"] == 'traffic_light': TLjunctions.append(item)
-        if item.tag == "connection" and 'tl' in item.keys(): TLconnections.append(item)    
+        if item.tag == "connection" and 'tl' in item.keys(): TLconnections.append(item)
     
     net = TLobjects(TLjunctions, TLconnections)
     junctions = net._TLjunctions

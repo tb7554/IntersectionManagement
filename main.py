@@ -1,6 +1,6 @@
 from __future__ import division, print_function
 import os, sys
-from scipy.stats.mstats_basic import tmax
+import matplotlib.pyplot as plt
 
 os.environ["SUMO_HOME"] = "/sumo" # Home directory, stops SUMO using slow web lookups for XML files
 os.environ["SUMO_BINARY"] = "/usr/local/bin/sumo-gui" # binary for SUMO simulations
@@ -136,9 +136,7 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
                 elif (old_phase[ii] == 'g' or old_phase[ii] == 'G') and (new_phase[ii] == 'r'):
                     amberPhase.append('y')
                 elif old_phase[ii] == 'G' and new_phase[ii] == 'G':
-                    amberPhase.append('r')
-                elif old_phase[ii] == 'y':
-                    amberPhase.append('y')
+                    amberPhase.append('G')
                 else:
                     print("Something wrong in amber phase logic. Old: %s, New: %s" % (old_phase[ii], new_phase[ii]))
                     
@@ -178,7 +176,7 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
         for ii in range(0,len(elements_to_update)):
             if elements_to_update[ii] == 1 : self._queueGreenTimes[ii] = Gt_new # Apply Gt_new to all queues
         
-        print(self._id, self._queueGreenTimes)
+        #print(self._id, self._queueGreenTimes)
               
     def updateQueues(self):
         """Updates the length of the queues using traci"""
@@ -230,10 +228,10 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
         
     def update(self, stepsize):
         if not(self._state) and self._amberTimer <= 0:
-            traci.trafficlights.setRedYellowGreenState("0/0", self._nextGreenString)
+            traci.trafficlights.setRedYellowGreenState(self._id, self._nextGreenString)
             self._currentPhaseString = self._nextGreenString
             self._state = True
-            #print("Amber Phase Over. Switching to %s" % self._nextGreenString)
+            print("%s: Amber Phase Over. Switching to %s" % (self._id, self._nextGreenString))
         elif not(self._state) and self._amberTimer > 0:
             self._amberTimer -= stepsize
         elif self._state and self._greenTimer <= 0:
@@ -248,7 +246,7 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
                 traci.trafficlights.setRedYellowGreenState(self._id, self._currentPhaseString)
                 self._currentQindex = newQindex
                 self._state = False
-                #print("%s Green Phase Over. Switching to %s" % (self._id, self._currentPhaseString))
+                print("%s: Green Phase Over. Switching to %s" % (self._id, self._currentPhaseString))
         elif self._state and self._greenTimer > 0:
             self._greenTimer -= stepsize
         else:
@@ -345,6 +343,9 @@ if __name__ == "__main__":
 
     TLnet = generateL.getTLobjects(netFile_filepath)
     ICcontainer = intersectionControllerContainer(TLnet, timer, queueControl)
+
+    y = []
+    z = []
     
     # run the simulation
     while step == 0 or traci.simulation.getMinExpectedNumber() > 0:
@@ -352,4 +353,17 @@ if __name__ == "__main__":
         
         ICcontainer.updateICqueues(stepLength)
         
+        Gt=ICcontainer._ICs['0/0']._queueGreenTimes[8]
+        y.append(Gt)
+        z.append(ICcontainer._ICs['0/0']._Xs[8]*10)
+        
+        if step > 2000:
+            plt.plot(range(0,len(y)), y, hold=True)
+            plt.plot(range(0,len(z)), z)
+            print(max(z))
+            plt.show()
+        
         step += stepLength
+        
+    plt.plot(range(0,len(y)), y)
+    plt.show()
