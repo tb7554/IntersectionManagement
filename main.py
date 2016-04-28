@@ -1,9 +1,9 @@
-from __future__ import division
+from __future__ import division, print_function
 import os, sys
 from scipy.stats.mstats_basic import tmax
 
 os.environ["SUMO_HOME"] = "/sumo" # Home directory, stops SUMO using slow web lookups for XML files
-os.environ["SUMO_BINARY"] = "/usr/local/bin/sumo" # binary for SUMO simulations
+os.environ["SUMO_BINARY"] = "/usr/local/bin/sumo-gui" # binary for SUMO simulations
  
 def getOpenPort():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -29,13 +29,13 @@ class minMaxGreenTimeController:
         """ Takes the target number of vehicles to remove from the queue, compares withe the actual number. Returns updated green time."""
         if B > A:
             Gt = (timer + self._Tmin)/2
-            print("Decreasing green time")
+            #print("Decreasing green time")
         elif B < A:
             Gt = (timer + self._Tmax)/2
-            print("Increasing Green Time")
+            #print("Increasing Green Time")
         else:
             Gt = timer
-            print("No change in green time")  
+            #print("No change in green time")  
         return Gt
 
 class LmaxQueueController:
@@ -44,9 +44,12 @@ class LmaxQueueController:
         """ Controller that maximises the total number of vehicles released at each phase, regardless of fairness """
         self._L = None
     
-    def setL(self, L_array):
+    def setL(self, L, matrix=True):
         """ Turn the L array into a matrix, for faster operations"""
-        self._L = np.matrix(L_array)
+        if matrix:
+            self._L = L
+        else:
+            self._L = np.matrix(L)
         
     def LdotX(self, x):
         """ Returns the dot product of matrix L and the vector x"""
@@ -59,15 +62,19 @@ class LmaxQueueController:
 
 class intersectionController:
      
-    def __init__(self, numQueues, L, greenTimeController, queueController):
+    def __init__(self, ICid, numQueues, incLanes, lanes2indexDict, outLanes, L, L_strings, greenTimeController, queueController):
         """ Class which controls the lights at each intersection. This class keps track of properties such as
         the time elapsed since the last phase. The algorithm for determining green times and queues will be defined 
         elsewhere and called by this function, in order to make it easy to switch algorithms """
         # Static properties of the intersection
-        self.id = '0/0'
+        self._id = ICid
         self._numQueues = numQueues # The number of queues at this intersection (i.e. the number of combinations of in queue and out queue)
+        self._incLanes = incLanes
+        self._lanes2index = lanes2indexDict
+        self.getOutLanes = outLanes
+        
         self._L = L
-        self._Lstrings = self.setLstrings(L)
+        self._Lstrings = L_strings
     
         # Algorithms used for picking queues and calculating green time
         self._timerControl = greenTimeController
@@ -75,17 +82,25 @@ class intersectionController:
         
         # Current values for dynamic properties
         self._currentQindex = 0
-        self._currentPhaseString = self._Lstrings[0] # Initialise light settings as all red (will change in the first step of the simulation
+        self._currentPhaseString = "".join(self._Lstrings[0]) # Initialise light settings as all red (will change in the first step of the simulation
         
         # Values to track important variables and state changes
         self._greenTimer = greenTimeController.getInitialGreenTime() # Elapsed time since last phase
         self._amberTimer = 0
         self._state = False # True means green state, False means amber state
         self._queueGreenTimes = [greenTimeController.getInitialGreenTime()]*numQueues
-        self._nextGreenString = self._Lstrings[0]
-        self._Xs = [0,0,0,1,1,1,0,0,0,1,1,1]
-        self._As = [2,2,2,3,3,3,2,2,2,3,3,3]
-        self._Bs = [3,3,3,2,2,2,3,3,3,2,2,2]
+        self._nextGreenString = "".join(self._Lstrings[0])
+        
+        self._Xs = [0]*numQueues
+        self._As = [0]*numQueues
+
+        self._Bs = [0]*numQueues
+        self._vehList_k0 = {}
+        self._vehList_kGt = {}
+        
+        for lane in self.getIncLanes():
+            self._vehList_k0.update({lane:[]})
+            self._vehList_kGt.update({lane:[]})
     
     def __repr__(self):
         """String representation to see what is happening in the class"""
@@ -97,46 +112,58 @@ Current Amber Timer: %.1f
 Current State : %s
 Current Green Times : %s
 Next Green String : %s
-Queues : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._greenTimer, self._amberTimer, self._state, str(self._queueGreenTimes), self._nextGreenString, self._Xs))
+Queues : %s
+A : %s
+B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._greenTimer, self._amberTimer, self._state, str(self._queueGreenTimes), self._nextGreenString, self._Xs, self._As, self._Bs))
     
-    def setLstrings(self, L):
-        """Turns the conflict matrix L into strings that reflect possible traffic light states"""
-        strings = []
-        for set in L:
-            new_string = []
-            for light in set:
-                if light > 0:
-                    new_string.append('r')
-                else:
-                    new_string.append('G')
-            strings.append("".join(new_string))
-        return strings
-    
+    # Set property commands
     def setAmberPhase(self, old_phase_string, new_phase_string, amberPhaseLength = 3):
-        """ Sets the intermediate phase between traffic lights. Returns the phase duration and traffic light string. """
+        """ Sets the intermediate phase between green times. Returns the phase duration and traffic light string. """
         amberPhase = []
         
         old_phase = list(old_phase_string)
         new_phase = list(new_phase_string)
         
         if old_phase == new_phase:
-            amberPhaseLength = 0
+            amberPhaseLength = 1
             amberPhase = new_phase
         else:
             for ii in range(0, len(old_phase)):
                 if old_phase[ii] == 'r' and new_phase[ii] == 'r':
                     amberPhase.append('r')
+                elif old_phase[ii] == 'r' and (new_phase[ii] == 'g' or new_phase[ii] == 'G'):
+                    amberPhase.append('r')
                 elif (old_phase[ii] == 'g' or old_phase[ii] == 'G') and (new_phase[ii] == 'r'):
                     amberPhase.append('y')
-                elif old_phase[ii] == 'r' and (new_phase[ii] == 'g' or new_phase[ii] == 'G'):
+                elif old_phase[ii] == 'G' and new_phase[ii] == 'G':
+                    amberPhase.append('r')
+                elif old_phase[ii] == 'y':
                     amberPhase.append('y')
                 else:
-                    print("Something wrong in amber phase logic.")
+                    print("Something wrong in amber phase logic. Old: %s, New: %s" % (old_phase[ii], new_phase[ii]))
                     
         amberPhaseString = "".join(amberPhase)
              
         self._amberTimer = amberPhaseLength
-        self._currentPhaseSettings = amberPhaseString
+        self._currentPhaseString = amberPhaseString
+
+    def setXval(self,index,value):
+        self._Xs[index] = value
+        
+    def setBval(self, index, value):
+        self._Bs[index] = value
+    
+    def setVehList_k0_val(self, lane, vehList):
+        try:
+            self._vehList_k0[lane] = vehList
+        except ValueError:
+            self._vehList_k0.update({lane:vehList})
+    
+    def setVehList_kGt_val(self, lane, vehList):   
+        try:
+            self._vehList_kGt[lane] = vehList
+        except ValueError:
+            self._vehList_kGt.update({lane:vehList})     
     
     def updateGreenTime(self):
         """Updates the green time for the current queue (which will be used next time the queue receives a green light) using the timer algorithm"""
@@ -146,64 +173,141 @@ Queues : %s""" % (float(self._currentQindex), str(self._currentPhaseString), sel
         
         Gt_new = self._timerControl.getNewGreenTime(A_current, B_current, Gt_current)
         
-        print(Gt_current, A_current, B_current, Gt_new)
-        
         elements_to_update = self._L[self._currentQindex][:]
         
         for ii in range(0,len(elements_to_update)):
             if elements_to_update[ii] == 1 : self._queueGreenTimes[ii] = Gt_new # Apply Gt_new to all queues
+        
+        print(self._id, self._queueGreenTimes)
               
-    def updateQs(self):
+    def updateQueues(self):
         """Updates the length of the queues using traci"""
-        for ii in range(0,len(self._Xs)):
-            if self._Xs[ii] == 0:
-                self._Xs[ii] = 1
-            else:
-                self._Xs[ii] = 0
+        # The length of each queue is just the number of vehicles in it.
+        # Get the list of all lanes incoming into the junction
+        # For every lane, measure the number of vehicles in the queue
+        for lane in self.getIncLanes():
+            Qlength = traci.lane.getLastStepVehicleNumber(lane)
+            # For every linkIndex assigned to this lane, update link index as follows 'vehicles_in_lane / num_links'
+            num_indexes_assigned_to_lane = len(self.getIndexesFromLane(lane))
+            value = Qlength/num_indexes_assigned_to_lane
+            # Input into matrix X
+            for index in self.getIndexesFromLane(lane):
+                self.setXval(index,value)
                 
     def updateA(self, fractionReduction):
         """Updates the target number of vehicles to remove from each queue"""
+        # Set A by mapping the array of queues lengths (X) to a function that multiplies it by the fraction reduction
+        self._As = (map(lambda x : x*fractionReduction, self.getXs()))
     
     def updateB(self):
         """Updates the actual number of vehicles removed from the queue"""
+        # Identify only individual vehicles removed from the queue, that were there at the start
+        # Compare the vehicles at the start to the vehicles at the end
+        
+        for lane in self.getIncLanes():
+            # Get the list of IDs
+            vehIDs = traci.lane.getLastStepVehicleIDs(lane)
+            # Store them in the dictionary
+            self.setVehList_kGt_val(lane, vehIDs)
+            
+            indexes = self.getIndexesFromLane(lane)
+            num_indexes_assigned_to_lane = len(indexes)
+            
+            startCount = self.getVehList_kGt_forLane(lane)
+            endCount = self.getVehList_k0_forLane(lane)
+            
+            vehCount = 0
+            
+            for element in startCount:
+                if element not in endCount : vehCount += 1
+                
+            value = vehCount/num_indexes_assigned_to_lane
+            
+            for index in indexes:
+                self.setBval(index, value)
+                
+            self.setVehList_k0_val(lane, vehIDs)
+        
+    def update(self, stepsize):
+        if not(self._state) and self._amberTimer <= 0:
+            traci.trafficlights.setRedYellowGreenState("0/0", self._nextGreenString)
+            self._currentPhaseString = self._nextGreenString
+            self._state = True
+            #print("Amber Phase Over. Switching to %s" % self._nextGreenString)
+        elif not(self._state) and self._amberTimer > 0:
+            self._amberTimer -= stepsize
+        elif self._state and self._greenTimer <= 0:
+                self.updateQueues()
+                self.updateA(0.5)
+                self.updateB()
+                self.updateGreenTime()
+                newQindex = self.chooseQueues()
+                self._greenTimer = self._queueGreenTimes[newQindex]
+                self._nextGreenString = self.getQstring(newQindex)
+                self.setAmberPhase(self._currentPhaseString, self._nextGreenString, amberPhaseLength=5)
+                traci.trafficlights.setRedYellowGreenState(self._id, self._currentPhaseString)
+                self._currentQindex = newQindex
+                self._state = False
+                #print("%s Green Phase Over. Switching to %s" % (self._id, self._currentPhaseString))
+        elif self._state and self._greenTimer > 0:
+            self._greenTimer -= stepsize
+        else:
+            print("Something wrong in update phase logic")
             
     def chooseQueues(self):
         return self._queueControl.bestQueueSet(self._Xs)
     
     def getQstring(self, Qindex):
-        return self._Lstrings[Qindex]
-        
-    def update(self, stepsize):
-        if not(self._state) and self._amberTimer <= 0:
-            traci.trafficlights.setRedYellowGreenState("0/0", self._nextGreenString)
-            self._state = True
-            print("Amber Phase Over. Switching to %s" % self._nextGreenString)
-        elif not(self._state) and self._amberTimer > 0:
-            self._amberTimer -= stepsize
-        elif self._state and self._greenTimer <= 0:
-                self.updateQs()
-                self.updateGreenTime()
-                newQindex = self.chooseQueues()
-                self._greenTimer = self._queueGreenTimes[newQindex]
-                self._nextGreenString = self.getQstring(newQindex)
-                self.setAmberPhase(self._currentPhaseString, self._nextGreenString, amberPhaseLength=3)
-                traci.trafficlights.setRedYellowGreenState("0/0", self._currentPhaseSettings)
-                self._currentQindex = newQindex
-                self._state = False
-                print("Green Phase Over. Switching to %s" % self._currentPhaseSettings)
-                print(self._queueGreenTimes)
-        elif self._state and self._greenTimer > 0:
-            self._greenTimer -= stepsize
-        else:
-            print("Something wrong in update phase logic")
-        
-class inersectionControllerContainer:
+        string_array = self._Lstrings[Qindex]
+        return "".join(string_array)
     
-    def __init__(self):
-        self._ICs = {}
+    def getXs(self):
+        return self._Xs
+    
+    def getIncLanes(self):
+        return self._incLanes
+    
+    def getLanes2IndexDict(self):
+        return self._lanes2index
+    
+    def getIndexesFromLane(self, lane):
+        return self._lanes2index[lane]
+    
+    def getVehList_k0(self):
+        return self._vehList_k0
+    
+    def getVehList_k0_forLane(self, lane):
+        return self._vehList_k0[lane]
         
-    def addIC(self, IC):
-        None
+    def getVehList_kGt(self):
+        return self._vehList_kGt
+    
+    def getVehList_kGt_forLane(self, lane):
+        return self._vehList_kGt[lane]
+        
+class intersectionControllerContainer:
+    
+    def __init__(self, TLJuncsContainer, timerControl, queueControl):
+        self._TLJuncs = TLJuncsContainer._TLjunctions
+        self._ICs = self.addIntersectionControllers(timerControl, queueControl)
+        
+    def addIntersectionControllers(self, timerControl, queueControl):
+        ICs = {}
+        for junction in self._TLJuncs:
+            ICid = junction
+            numQueues = self._TLJuncs[junction].getNumQueues()
+            L, L_strings = self._TLJuncs[junction].findCompatibleFlows()
+            incLanes = self._TLJuncs[junction].getIncLanes()
+            outLanes = self._TLJuncs[junction].getOutLanes()
+            lanes2indexDict = self._TLJuncs[junction].getLane2IndexesDict()
+            IC = intersectionController(ICid, numQueues, incLanes, lanes2indexDict, outLanes, L, L_strings, timerControl, queueControl)
+            IC._queueControl.setL(L)
+            ICs.update({ICid:IC})
+        return ICs
+    
+    def updateICqueues(self, stepsize):
+        for IC in self._ICs:
+            self._ICs[IC].update(stepsize)
 
 if __name__ == "__main__":
     
@@ -212,6 +316,7 @@ if __name__ == "__main__":
     import subprocess
     import numpy as np
     from sumolib import net
+    import generateL
     
     # Input arguments
     netFile_filepath = "netFiles/grid.net.xml" #sys.argv[1]
@@ -220,44 +325,31 @@ if __name__ == "__main__":
     tripInfoOutput_filepath = "tripsoutput.xml"
     traciPort = getOpenPort()
     
-    sln = net.readNet(netFile_filepath)
-    
-    TLS  = sln._tlss
-    
-    cons = TLS[1]._connections
-    
-    for con in cons:
-        print(con[0].getID(), con[1].getID(), con[2])
-        
-    
-    
-    """
     # if guiOn: sumoBinary += "-gui" Need an options parser to add this, currently just setting gui to default
     sumoCommand = ("%s -n %s -r %s --step-length %.2f --tripinfo-output %s --remote-port %d --no-step-log" % \
                    (os.environ["SUMO_BINARY"], netFile_filepath, routeFile_filepath, stepLength, tripInfoOutput_filepath, traciPort))
     sumoProcess = subprocess.Popen(sumoCommand, shell=True, stdout=sys.stdout, stderr=sys.stderr)
     print("Launched process: %s" % sumoCommand)
     
-    traci.init(traciPort) # Open up traci on a free port
+    # Open up traci on a free port
+    traci.init(traciPort)
     
     # initialise the step
     step = 0
     
-    Tmin = 20
-    Tmax = 100
-    L_flat = [[1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0], [1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0], [1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0], [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1], [1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0], [1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0], [1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0], [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1], [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1]]
+    Tmin = 30
+    Tmax = 90
     timer = minMaxGreenTimeController(Tmin, Tmax)
-    queueControl = LmaxQueueController()
-    queueControl.setL(L_flat)
     
-    intersectionController_1 = intersectionController(12, L_flat, timer, queueControl)
+    queueControl = LmaxQueueController()
+
+    TLnet = generateL.getTLobjects(netFile_filepath)
+    ICcontainer = intersectionControllerContainer(TLnet, timer, queueControl)
     
     # run the simulation
     while step == 0 or traci.simulation.getMinExpectedNumber() > 0:
         traci.simulationStep()
-        #timeNow = traci.simulation.getCurrentTime()
         
-        intersectionController_1.update(stepLength)
-              
+        ICcontainer.updateICqueues(stepLength)
+        
         step += stepLength
-    """
