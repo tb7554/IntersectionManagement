@@ -15,18 +15,20 @@ def getOpenPort():
 
 class minMaxGreenTimeController:
     
-    def __init__(self, Tmin, Tmax):
+    def __init__(self, Tmin, Tmax, x_star):
         """ Controller that uses basic Tmin and Tmax to adjust green time """
         self._Tmin = Tmin
         self._Tmax = Tmax
+        self._x_star = x_star
         self._initialGreenTime = (Tmax+Tmin)/2
         
     def getInitialGreenTime(self):
         """ Calculates the intial green time that all lights start with """
         return self._initialGreenTime
         
-    def getNewGreenTime(self, A, B, timer):
+    def getNewGreenTime(self, X, B, timer):
         """ Takes the target number of vehicles to remove from the queue, compares withe the actual number. Returns updated green time."""
+        A=x*self._x_star
         if B > A:
             Gt = (timer + self._Tmin)/2
             #print("Decreasing green time")
@@ -166,10 +168,10 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
     def updateGreenTime(self):
         """Updates the green time for the current queue (which will be used next time the queue receives a green light) using the timer algorithm"""
         Gt_current = self._queueGreenTimes[self._currentQindex]
-        A_current = self._As[self._currentQindex]
+        X_current = self._Xs[self._currentQindex]
         B_current = self._Bs[self._currentQindex]
         
-        Gt_new = self._timerControl.getNewGreenTime(A_current, B_current, Gt_current)
+        Gt_new = self._timerControl.getNewGreenTime(X_current, B_current, Gt_current)
         
         elements_to_update = self._L[self._currentQindex][:]
         
@@ -231,12 +233,11 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
             traci.trafficlights.setRedYellowGreenState(self._id, self._nextGreenString)
             self._currentPhaseString = self._nextGreenString
             self._state = True
-            print("%s: Amber Phase Over. Switching to %s" % (self._id, self._nextGreenString))
+            #print("%s: Amber Phase Over. Switching to %s" % (self._id, self._nextGreenString))
         elif not(self._state) and self._amberTimer > 0:
             self._amberTimer -= stepsize
         elif self._state and self._greenTimer <= 0:
                 self.updateQueues()
-                self.updateA(0.5)
                 self.updateB()
                 self.updateGreenTime()
                 newQindex = self.chooseQueues()
@@ -246,7 +247,7 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
                 traci.trafficlights.setRedYellowGreenState(self._id, self._currentPhaseString)
                 self._currentQindex = newQindex
                 self._state = False
-                print("%s: Green Phase Over. Switching to %s" % (self._id, self._currentPhaseString))
+                #print("%s: Green Phase Over. Switching to %s" % (self._id, self._currentPhaseString))
         elif self._state and self._greenTimer > 0:
             self._greenTimer -= stepsize
         else:
@@ -315,6 +316,8 @@ if __name__ == "__main__":
     import numpy as np
     from sumolib import net
     import generateL
+    from multiprocessing import cpu_count, Pool
+    import time
     
     # Input arguments
     netFile_filepath = "netFiles/grid.net.xml" #sys.argv[1]
@@ -334,36 +337,43 @@ if __name__ == "__main__":
     
     # initialise the step
     step = 0
-    
-    Tmin = 30
-    Tmax = 90
-    timer = minMaxGreenTimeController(Tmin, Tmax)
+    target_frac = 0.5 
+    Tmin = 20
+    Tmax = 40
+    timer = minMaxGreenTimeController(Tmin, Tmax, target_frac)
     
     queueControl = LmaxQueueController()
 
     TLnet = generateL.getTLobjects(netFile_filepath)
     ICcontainer = intersectionControllerContainer(TLnet, timer, queueControl)
 
-    y = []
-    z = []
+    y = [[0] for x in range(4)]
+    print(y)
+    z = [[0] for x in range(4)]
+    print(z)
+    linkIndex = [0,3,6,9]
     
     # run the simulation
-    while step == 0 or traci.simulation.getMinExpectedNumber() > 0:
+    while step < 9000:
         traci.simulationStep()
         
         ICcontainer.updateICqueues(stepLength)
         
-        Gt=ICcontainer._ICs['0/0']._queueGreenTimes[8]
-        y.append(Gt)
-        z.append(ICcontainer._ICs['0/0']._Xs[8]*10)
-        
-        if step > 2000:
-            plt.plot(range(0,len(y)), y, hold=True)
-            plt.plot(range(0,len(z)), z)
-            print(max(z))
-            plt.show()
+        for x in range(4):
+            y[x].append(ICcontainer._ICs['0/0']._queueGreenTimes[linkIndex[x]])
+            z[x].append(ICcontainer._ICs['0/0']._Xs[linkIndex[x]])
         
         step += stepLength
         
-    plt.plot(range(0,len(y)), y)
+        if int(step)%1000 == 0 : print(int(step))
+    
+    t = range(len(y[0]))
+    print(len(t))
+    print(len(y[0]))
+    print("Plotting 1") 
+    plt.figure(1)
+    plt.plot(t, y[0], 'r', t, y[1], 'b', t, y[2], 'g', t, y[3], 'k')
+    print("Plotting 2") 
+    plt.figure(2)
+    plt.plot(t, z[0], 'r', t, z[1], 'b', t, z[2], 'g', t, z[3], 'k')
     plt.show()
