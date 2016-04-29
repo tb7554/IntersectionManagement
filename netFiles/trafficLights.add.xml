@@ -1,0 +1,4 @@
+<tlLogic id="Center" programID="TLS1" offset="0" type="static">
+	<phase duration="10" state="GrGr"/>
+	<phase duration="10" state="rGrG"/>
+</tlLogic>

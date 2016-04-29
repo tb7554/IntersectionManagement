@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on Mon Apr 25 12:03:23 2016 by SUMO netconvert Version 0.21.0
+<?xml version="1.0" encoding="UTF-8"?>
+
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo-sim.org/xsd/netconvertConfiguration.xsd">
+
+    <input>
+        <node-files value="nodes.nod.xml"/>
+        <edge-files value="edges.edg.xml"/>
+        <type-files value="type.typ.xml"/>
+    </input>
+
+    <output>
+        <output-file value="network.net.xml"/>
+    </output>
+
+</configuration>
+-->
+
+<net version="0.13" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo-sim.org/xsd/net_file.xsd">
+
+    <location netOffset="50.00,50.00" convBoundary="0.00,0.00,100.00,100.00" origBoundary="-50.00,-50.00,50.00,50.00" projParameter="!"/>
+
+    <edge id="Eastbound" from="Center" to="East" priority="-1" type="b-road">
+        <lane id="Eastbound_0" index="0" speed="13.89" length="41.95" shape="58.05,45.05 100.00,45.05"/>
+        <lane id="Eastbound_1" index="1" speed="13.89" length="41.95" shape="58.05,48.35 100.00,48.35"/>
+    </edge>
+    <edge id="Northbound" from="Center" to="North" priority="-1" type="b-road">
+        <lane id="Northbound_0" index="0" speed="13.89" length="41.95" shape="54.95,58.05 54.95,100.00"/>
+        <lane id="Northbound_1" index="1" speed="13.89" length="41.95" shape="51.65,58.05 51.65,100.00"/>
+    </edge>
+    <edge id="Southbound" from="Center" to="South" priority="-1" type="b-road">
+        <lane id="Southbound_0" index="0" speed="13.89" length="41.95" shape="45.05,41.95 45.05,0.00"/>
+        <lane id="Southbound_1" index="1" speed="13.89" length="41.95" shape="48.35,41.95 48.35,0.00"/>
+    </edge>
+    <edge id="Westbound" from="Center" to="West" priority="-1" type="b-road">
+        <lane id="Westbound_0" index="0" speed="13.89" length="41.95" shape="41.95,54.95 0.00,54.95"/>
+        <lane id="Westbound_1" index="1" speed="13.89" length="41.95" shape="41.95,51.65 0.00,51.65"/>
+    </edge>
+
+    <junction id="Center" type="unregulated" x="50.00" y="50.00" incLanes="" intLanes="" shape="50.05,58.05 56.55,58.05 58.05,49.95 58.05,43.45 49.95,41.95 43.45,41.95 41.95,50.05 41.95,56.55"/>
+    <junction id="East" type="unregulated" x="100.00" y="50.00" incLanes="Eastbound_0 Eastbound_1" intLanes="" shape="100.00,43.45 100.00,49.95"/>
+    <junction id="North" type="unregulated" x="50.00" y="100.00" incLanes="Northbound_0 Northbound_1" intLanes="" shape="56.55,100.00 50.05,100.00"/>
+    <junction id="South" type="unregulated" x="50.00" y="0.00" incLanes="Southbound_0 Southbound_1" intLanes="" shape="43.45,0.00 49.95,0.00"/>
+    <junction id="West" type="unregulated" x="0.00" y="50.00" incLanes="Westbound_0 Westbound_1" intLanes="" shape="0.00,56.55 0.00,50.05"/>
+
+</net>

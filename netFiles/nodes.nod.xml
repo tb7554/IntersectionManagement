@@ -1,0 +1,7 @@
+<nodes>
+    <node id="North" x="0.0" y="+50.0" type="priority"/>
+    <node id="East" x="+50.0" y="0.0" type="priority"/>
+    <node id="South" x="0.00" y="-50.0" type="priority"/>
+    <node id="West" x="-50.0" y="0.0" type="priority"/>
+    <node id="Center" x="0.0" y="0.0" type="traffic_light"/>
+</nodes>

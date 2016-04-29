@@ -1,0 +1,6 @@
+<edges>
+    <edge id="Northbound" from="Center" to="North" type="b-road" />
+    <edge id="Eastbound" from="Center" to="East" type="b-road" />
+    <edge id="Southbound" from="Center" to="South" type="b-road" />
+    <edge id="Westbound" from="Center" to="West" type="b-road" />
+</edges>
