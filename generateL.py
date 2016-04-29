@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 import xml.etree.cElementTree as ET
 import operator
@@ -157,75 +158,84 @@ class TLjunction:
         return priorityArray[index]
          
     def findCompatibleFlows(self):
+        
+        # Pull the relevant bits of data from the object.
         n = self._numRequests
         light_settings_matrix = np.zeros([n,n]).astype(str)
         L = np.zeros([n,n])
-        foes = self._requests_foesMatrix
+        foes = np.matrix(self._requests_foesMatrix)
         dirs = self._directions
         
+        # Using the principle that two flows crossing makes them incompatible, we set the matrix L, which gives flow compatability, and matrix light_matrix, which gives
+        # the light setting 
         for ii in range(0,n):
             for jj in range(0,n):
-                if foes[ii][jj]:
+                if foes[ii,jj]:
                     d_row = dirs[ii]
                     d_col = dirs[jj]
                     if d_row == "s" and d_col == "s":
-                        light_settings_matrix[ii][jj] = 'r'
-                        L[ii][jj] = 0
+                        light_settings_matrix[ii,jj] = 'r'
+                        L[ii,jj] = 0
                     elif d_row == "s" and d_col == "r":
-                        light_settings_matrix[ii][jj] = 'r'
-                        L[ii][jj] = 0
+                        light_settings_matrix[ii,jj] = 'r'
+                        L[ii,jj] = 0
                     elif d_row == "s" and d_col == "l":
-                        light_settings_matrix[ii][jj] = 'r'
-                        L[ii][jj] = 0
+                        light_settings_matrix[ii,jj] = 'r'
+                        L[ii,jj] = 0
                     elif d_row == "r" and d_col == "s":
-                        light_settings_matrix[ii][jj] = 'r'
-                        L[ii][jj] = 0
+                        light_settings_matrix[ii,jj] = 'r'
+                        L[ii,jj] = 0
                     elif d_row == 'r' and d_col == 'l':
-                        light_settings_matrix[ii][jj] = 'r'
-                        L[ii][jj] = 0
+                        light_settings_matrix[ii,jj] = 'r'
+                        L[ii,jj] = 0
                     elif d_row == "l" and d_col == "s":
-                        light_settings_matrix[ii][jj] = 'r'
-                        L[ii][jj] = 0
+                        light_settings_matrix[ii,jj] = 'r'
+                        L[ii,jj] = 0
                     elif d_row == 'l' and d_col == 'l':
-                        light_settings_matrix[ii][jj] = 'r'
-                        L[ii][jj] = 0
+                        light_settings_matrix[ii,jj] = 'r'
+                        L[ii,jj] = 0
                     elif d_row == 'l' and d_col =='r':
-                        light_settings_matrix[ii][jj] = 'r'
-                        L[ii][jj] = 0
+                        light_settings_matrix[ii,jj] = 'r'
+                        L[ii,jj] = 0
                     else:
                         print("Forgot case when d_row %s and d_col %s" % (d_row, d_col))
                 else:
-                    light_settings_matrix[ii][jj] = 'G'
-                    L[ii][jj] = 1
+                    light_settings_matrix[ii,jj] = 'G'
+                    L[ii,jj] = 1
         
+        if __name__ == "__main__":
+            print(light_settings_matrix) 
+            print('\n')
+            print(L.astype(int)) 
+            print('\n')
         
-        
-        print(light_settings_matrix) 
-        print('\n')
-        print(L.astype(int)) 
-        print('\n')
-        
-        
+        # We now need to add the relationship between dependent flows. Flows are dependent if, for example, they originate from the same lane. A flow with value 1 which is dependent on a flow
+        # with value 0, must also be set to zero. The resulting matrix is called L_squashed.
         lane2index = self._lane2indexes
         L_squashed = np.zeros([n,n])
-        for lane in lane2index:
-            indexes = lane2index[lane]
-            for ii in range(0,n):
-                lane_queue_values = []
-                for index in indexes:
-                    lane_queue_values.append(L[index][ii])
-                logical_and_result = functools.reduce(operator.mul,lane_queue_values,1)
-                for index in indexes:
-                    L_squashed[index][ii] = logical_and_result
         
-        """Need a way to zero lanes which cannot be opened due to interdependence with other lights"""
-                
-                    
+        # For every lane (which will be the lane with priority)
+        for lane_1 in lane2index:
+            # compared with every other lane (which will be dependent on lane_1)
+            for lane_2 in lane2index:
+                indexes_1 = lane2index[lane_1] # Get the indexes from that lane
+                indexes_2 = lane2index[lane_2] # Get the indexes from that lane
+                # We are going to make a sub-matrix from L, based on the two lanes being compared (and including all their indexes)
+                L_sub = L[min(indexes_1):max(indexes_1)+1,min(indexes_2):max(indexes_2)+1]
+                # If every value in this sub matrix is not equal to 1, then the whole submatrix must be set to zero. We simply use
+                # the logical numpy call .all() to determine this. If false, leave every value in L_squashed as 0 for this matrix
+                # if true, set every value to 1.
+                if L_sub.all() : L_squashed[min(indexes_1):max(indexes_1)+1,min(indexes_2):max(indexes_2)+1] = 1        
         print(L_squashed.astype(int))
         print('\n')
         
+        # Using the light settings defined above, and the knowledge of independent flows from L_squashed, we create an adjusted
+        # light_settings_matrix called 'lights_squashed', which takes into account dependency between flows. We also take into account
+        # the priority of differenct light settings (e.g. if a traffic light for flow 'a' is green for flow 'b', but red for
+        # flow 'c', and 'b' is dependent on 'c' (i.e. 'b' and 'c' are on the same lane), then 'a' must be set to red. Similarly
+        # if 'a' has priority over 'b' but must give priority to 'c', then 'a' must be set to give priority.
+         
         lights_squashed = np.empty([n,n]).astype(str)
-        
         priorityLights = []
         for ii in range(0,n):
             lightChoices = []
@@ -242,9 +252,6 @@ class TLjunction:
                     lights_squashed[ii][jj] = 'r'
                     
         print(lights_squashed)
-        
-       # print("".join(lights_squashed[0]))
-        #print("".join(lights_squashed[3]))
         
         return  L_squashed, lights_squashed
         
