@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import division, print_function
 import os, sys
 import matplotlib.pyplot as plt
@@ -44,27 +45,25 @@ class LmaxQueueController:
     
     def __init__(self):
         """ Controller that maximises the total number of vehicles released at each phase, regardless of fairness """
-        self._L = None
     
-    def setL(self, L, matrix=True):
-        """ Turn the L array into a matrix, for faster operations"""
-        if matrix:
-            self._L = L
-        else:
-            self._L = np.matrix(L)
+    def modifyLwithC(self, L, C):
+        """ Modify the L matrix to exclude lanes that have nowhere to send traffic (i.e. target lanes are full) """
         
-    def LdotX(self, x):
-        """ Returns the dot product of matrix L and the vector x"""
-        return np.dot(self._L, np.matrix(x).transpose())
     
-    def bestQueueSet(self, x):
+    def LdotX(self, ):
+        """ Returns the dot product of matrix L and the vector x"""
+        return np.dot(self._L, np.matrix(X).transpose())
+    
+    def bestQueueSet(self, IC):
         """Picks the best queue to release, based on total number of vehicles in non-conflicting queues"""
-        Qindex = np.argmax(self.LdotX(x))
-        return Qindex
+        L = IC._L
+        LdotX = np.dot(L, IC._Xs)
+        
+        return int(round(np.random.rand()*10))
 
 class intersectionController:
      
-    def __init__(self, ICid, numQueues, incLanes, lanes2indexDict, outLanes, L, L_strings, greenTimeController, queueController):
+    def __init__(self, ICid, numQueues, incLanes, incLanes2indexDict, outLanes, outLanes2indexDict, L, L_strings, greenTimeController, queueController):
         """ Class which controls the lights at each intersection. This class keps track of properties such as
         the time elapsed since the last phase. The algorithm for determining green times and queues will be defined 
         elsewhere and called by this function, in order to make it easy to switch algorithms """
@@ -72,8 +71,11 @@ class intersectionController:
         self._id = ICid
         self._numQueues = numQueues # The number of queues at this intersection (i.e. the number of combinations of in queue and out queue)
         self._incLanes = incLanes
-        self._lanes2index = lanes2indexDict
-        self.getOutLanes = outLanes
+        self._incLanes2index = incLanes2indexDict
+        self._outLanes = outLanes
+        self._outLanes2index = outLanes2indexDict
+        
+        self._indexDependencyMatrix = []
         
         self._L = L
         self._Lstrings = L_strings
@@ -93,9 +95,9 @@ class intersectionController:
         self._queueGreenTimes = [greenTimeController.getInitialGreenTime()]*numQueues
         self._nextGreenString = "".join(self._Lstrings[0])
         
-        self._Xs = [0]*numQueues
-        self._As = [0]*numQueues
-
+        self._Xs = [0]*numQueues # The queue size for each link
+        self._Cs = [0]*numQueues # The capacity of the links each queue wishes to join
+        
         self._Bs = [0]*numQueues
         self._vehList_k0 = {}
         self._vehList_kGt = {}
@@ -194,6 +196,12 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
             for index in self.getIndexesFromLane(lane):
                 self.setXval(index,value)
                 
+    def updateCapacities(self):
+        """Updates self._Cs with the capacity of the outgoing lanes"""
+        print("Out Lanes", self.getOutLanes())
+        for lane in self.getOutLanes():
+            print(traci.lane.getLastStepOccupancy(lane))
+            
     def updateA(self, fractionReduction):
         """Updates the target number of vehicles to remove from each queue"""
         # Set A by mapping the array of queues lengths (X) to a function that multiplies it by the fraction reduction
@@ -233,11 +241,12 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
             traci.trafficlights.setRedYellowGreenState(self._id, self._nextGreenString)
             self._currentPhaseString = self._nextGreenString
             self._state = True
-            #print("%s: Amber Phase Over. Switching to %s" % (self._id, self._nextGreenString))
+            print("%s: Amber Phase Over. Switching to %s" % (self._id, self._nextGreenString))
         elif not(self._state) and self._amberTimer > 0:
             self._amberTimer -= stepsize
         elif self._state and self._greenTimer <= 0:
                 self.updateQueues()
+                self.updateCapacities()
                 self.updateB()
                 self.updateGreenTime()
                 newQindex = self.chooseQueues()
@@ -247,14 +256,14 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
                 traci.trafficlights.setRedYellowGreenState(self._id, self._currentPhaseString)
                 self._currentQindex = newQindex
                 self._state = False
-                #print("%s: Green Phase Over. Switching to %s" % (self._id, self._currentPhaseString))
+                print("%s: Green Phase Over. Switching to %s" % (self._id, self._currentPhaseString))
         elif self._state and self._greenTimer > 0:
             self._greenTimer -= stepsize
         else:
             print("Something wrong in update phase logic")
             
     def chooseQueues(self):
-        return self._queueControl.bestQueueSet(self._Xs)
+        return self._queueControl.bestQueueSet(self)
     
     def getQstring(self, Qindex):
         string_array = self._Lstrings[Qindex]
@@ -266,11 +275,17 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
     def getIncLanes(self):
         return self._incLanes
     
-    def getLanes2IndexDict(self):
-        return self._lanes2index
+    def getIncLanes2indexDict(self):
+        return self._incLanes2index
+    
+    def getOutLanes(self):
+        return self._outLanes
+    
+    def getOutLanes2indexDict(self):
+        return self._outLanes2index
     
     def getIndexesFromLane(self, lane):
-        return self._lanes2index[lane]
+        return self._incLanes2index[lane]
     
     def getVehList_k0(self):
         return self._vehList_k0
@@ -295,18 +310,21 @@ class intersectionControllerContainer:
         for junction in self._TLJuncs:
             ICid = junction
             numQueues = self._TLJuncs[junction].getNumQueues()
-            L, L_strings = self._TLJuncs[junction].findCompatibleFlows()
+            L, L_strings = self._TLJuncs[junction].findCompatibleFlows_variablePriorityModel()
             incLanes = self._TLJuncs[junction].getIncLanes()
             outLanes = self._TLJuncs[junction].getOutLanes()
-            lanes2indexDict = self._TLJuncs[junction].getLane2IndexesDict()
-            IC = intersectionController(ICid, numQueues, incLanes, lanes2indexDict, outLanes, L, L_strings, timerControl, queueControl)
-            IC._queueControl.setL(L)
+            incLanes2indexDict = self._TLJuncs[junction].getIncLane2IndexesDict()
+            outLanes2indexDict = self._TLJuncs[junction].getOutLane2IndexesDict()
+            IC = intersectionController(ICid, numQueues, incLanes, incLanes2indexDict, outLanes, outLanes2indexDict, L, L_strings, timerControl, queueControl)
             ICs.update({ICid:IC})
         return ICs
     
     def updateICqueues(self, stepsize):
         for IC in self._ICs:
             self._ICs[IC].update(stepsize)
+
+def async_plot(fig_1,x,y):
+    pass
 
 if __name__ == "__main__":
     
@@ -337,9 +355,9 @@ if __name__ == "__main__":
     
     # initialise the step
     step = 0
-    target_frac = 0.5 
-    Tmin = 20
-    Tmax = 40
+    target_frac = 1 
+    Tmin = 30
+    Tmax = 90
     timer = minMaxGreenTimeController(Tmin, Tmax, target_frac)
     
     queueControl = LmaxQueueController()
@@ -354,26 +372,10 @@ if __name__ == "__main__":
     linkIndex = [0,3,6,9]
     
     # run the simulation
-    while step < 9000:
+    while step == 0 or traci.simulation.getMinExpectedNumber() > 0:
         traci.simulationStep()
         
         ICcontainer.updateICqueues(stepLength)
         
-        for x in range(4):
-            y[x].append(ICcontainer._ICs['0/0']._queueGreenTimes[linkIndex[x]])
-            z[x].append(ICcontainer._ICs['0/0']._Xs[linkIndex[x]])
-        
         step += stepLength
-        
-        if int(step)%1000 == 0 : print(int(step))
     
-    t = range(len(y[0]))
-    print(len(t))
-    print(len(y[0]))
-    print("Plotting 1") 
-    plt.figure(1)
-    plt.plot(t, y[0], 'r', t, y[1], 'b', t, y[2], 'g', t, y[3], 'k')
-    print("Plotting 2") 
-    plt.figure(2)
-    plt.plot(t, z[0], 'r', t, z[1], 'b', t, z[2], 'g', t, z[3], 'k')
-    plt.show()

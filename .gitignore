@@ -1,8 +1,6 @@
 *.pyc
-traci/
 .settings/
 SimpleT/
-netFiles/
 sumoApiExtension/
 sumolib/
 traci_tls/
