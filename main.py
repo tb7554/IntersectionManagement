@@ -3,6 +3,8 @@ from __future__ import division, print_function
 import os, sys
 import matplotlib.pyplot as plt
 
+# Measure relative length of both queues to get more information of which one to open up first
+
 os.environ["SUMO_HOME"] = "/sumo" # Home directory, stops SUMO using slow web lookups for XML files
 os.environ["SUMO_BINARY"] = "/usr/local/bin/sumo-gui" # binary for SUMO simulations
  
@@ -29,7 +31,8 @@ class minMaxGreenTimeController:
         
     def getNewGreenTime(self, X, B, timer):
         """ Takes the target number of vehicles to remove from the queue, compares withe the actual number. Returns updated green time."""
-        A=x*self._x_star
+        A=X*self._x_star
+        
         if B > A:
             Gt = (timer + self._Tmin)/2
             #print("Decreasing green time")
@@ -40,26 +43,59 @@ class minMaxGreenTimeController:
             Gt = timer
             #print("No change in green time")  
         return Gt
+    
+class PGreenTimeController:
+    
+    def __init__(self, K, G0, x_star):
+        """ Controller that uses basic Tmin and Tmax to adjust green time """
+        self._K = Tmin
+        self._x_star = x_star
+        self._initialGreenTime = G0
+        
+    def getInitialGreenTime(self):
+        """ Calculates the intial green time that all lights start with """
+        return self._initialGreenTime
+        
+    def getNewGreenTime(self, X, B, timer):
+        """ Takes the target number of vehicles to remove from the queue, compares withe the actual number. Returns updated green time."""
+        A = X*self._x_star
+        if A:
+            error = ((A-B)/A)*timer
+        else:
+            error = 0
+        return timer + self._K*error
 
 class LmaxQueueController:
     
     def __init__(self):
         """ Controller that maximises the total number of vehicles released at each phase, regardless of fairness """
     
-    def modifyLwithC(self, L, C):
-        """ Modify the L matrix to exclude lanes that have nowhere to send traffic (i.e. target lanes are full) """
-        
-    
-    def LdotX(self, ):
-        """ Returns the dot product of matrix L and the vector x"""
-        return np.dot(self._L, np.matrix(X).transpose())
-    
     def bestQueueSet(self, IC):
         """Picks the best queue to release, based on total number of vehicles in non-conflicting queues"""
         L = IC._L
         LdotX = np.dot(L, IC._Xs)
-        
-        return int(round(np.random.rand()*10))
+        Qmax = np.argmax(LdotX)
+        return Qmax
+    
+class CongestionAwareLmaxQueueController:
+    
+    def __init__(self):
+        pass
+    
+    def discountCongestedQueues(self, L, Cs):
+        """Sets L to 0 for queues which have nowhere to go"""
+        for ii in range(len(Cs)):
+            for jj in range(len(Cs)):
+                if Cs[ii] == 0 : L[ii,jj] = 0
+                
+        return L
+                 
+    def bestQueueSet(self, IC):
+        """Picks the best queue to release, based on total number of vehicles in non-conflicting queues"""
+        L = self.discountCongestedQueues(IC._L, IC._Cs)
+        LdotX = np.dot(L, IC._Xs)
+        Qmax = np.argmax(LdotX)
+        return Qmax
 
 class intersectionController:
      
@@ -96,15 +132,20 @@ class intersectionController:
         self._nextGreenString = "".join(self._Lstrings[0])
         
         self._Xs = [0]*numQueues # The queue size for each link
-        self._Cs = [0]*numQueues # The capacity of the links each queue wishes to join
+        self._Cs = [999]*numQueues # The capacity of the links each queue wishes to join
         
         self._Bs = [0]*numQueues
         self._vehList_k0 = {}
         self._vehList_kGt = {}
         
+        self.Gt_changeStep = [[],[],[],[]]
+        self.Gt_historical = [[],[],[],[]]
+        
         for lane in self.getIncLanes():
             self._vehList_k0.update({lane:[]})
             self._vehList_kGt.update({lane:[]})
+            
+        
     
     def __repr__(self):
         """String representation to see what is happening in the class"""
@@ -190,18 +231,29 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
         for lane in self.getIncLanes():
             Qlength = traci.lane.getLastStepVehicleNumber(lane)
             # For every linkIndex assigned to this lane, update link index as follows 'vehicles_in_lane / num_links'
-            num_indexes_assigned_to_lane = len(self.getIndexesFromLane(lane))
+            num_indexes_assigned_to_lane = len(self.getIndexesFromIncLane(lane))
             value = Qlength/num_indexes_assigned_to_lane
             # Input into matrix X
-            for index in self.getIndexesFromLane(lane):
+            for index in self.getIndexesFromIncLane(lane):
                 self.setXval(index,value)
                 
     def updateCapacities(self):
         """Updates self._Cs with the capacity of the outgoing lanes"""
-        print("Out Lanes", self.getOutLanes())
-        for lane in self.getOutLanes():
-            print(traci.lane.getLastStepOccupancy(lane))
+        for lane in self.getOutLanes2indexDict():
+            vehLength = traci.lane.getLastStepLength(lane)
+            if vehLength:
+                gap = (2*vehLength)/3
+                laneLength = traci.lane.getLength(lane)
+                vehCount = traci.lane.getLastStepVehicleNumber(lane)
+                spaces_total = int(laneLength/(vehLength + gap))
+            else:
+                laneLength = traci.lane.getLength(lane)
+                vehCount = traci.lane.getLastStepVehicleNumber(lane)
+                spaces_total = int(laneLength/(5 + (2*5)/3))   
+            for index in self.getIndexesFromOutLane(lane):
+                self._Cs[index] = spaces_total - vehCount
             
+              
     def updateA(self, fractionReduction):
         """Updates the target number of vehicles to remove from each queue"""
         # Set A by mapping the array of queues lengths (X) to a function that multiplies it by the fraction reduction
@@ -218,7 +270,7 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
             # Store them in the dictionary
             self.setVehList_kGt_val(lane, vehIDs)
             
-            indexes = self.getIndexesFromLane(lane)
+            indexes = self.getIndexesFromIncLane(lane)
             num_indexes_assigned_to_lane = len(indexes)
             
             startCount = self.getVehList_kGt_forLane(lane)
@@ -241,7 +293,7 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
             traci.trafficlights.setRedYellowGreenState(self._id, self._nextGreenString)
             self._currentPhaseString = self._nextGreenString
             self._state = True
-            print("%s: Amber Phase Over. Switching to %s" % (self._id, self._nextGreenString))
+            #print("%s: Amber Phase Over. Switching to %s" % (self._id, self._nextGreenString))
         elif not(self._state) and self._amberTimer > 0:
             self._amberTimer -= stepsize
         elif self._state and self._greenTimer <= 0:
@@ -256,7 +308,7 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
                 traci.trafficlights.setRedYellowGreenState(self._id, self._currentPhaseString)
                 self._currentQindex = newQindex
                 self._state = False
-                print("%s: Green Phase Over. Switching to %s" % (self._id, self._currentPhaseString))
+                #print("%s: Green Phase Over. Switching to %s" % (self._id, self._currentPhaseString))
         elif self._state and self._greenTimer > 0:
             self._greenTimer -= stepsize
         else:
@@ -284,8 +336,11 @@ B : %s""" % (float(self._currentQindex), str(self._currentPhaseString), self._gr
     def getOutLanes2indexDict(self):
         return self._outLanes2index
     
-    def getIndexesFromLane(self, lane):
+    def getIndexesFromIncLane(self, lane):
         return self._incLanes2index[lane]
+
+    def getIndexesFromOutLane(self, lane):
+        return self._outLanes2index[lane]
     
     def getVehList_k0(self):
         return self._vehList_k0
@@ -355,21 +410,15 @@ if __name__ == "__main__":
     
     # initialise the step
     step = 0
-    target_frac = 1 
+    target_frac = 1
     Tmin = 30
     Tmax = 90
-    timer = minMaxGreenTimeController(Tmin, Tmax, target_frac)
+    timer = PGreenTimeController(0.1, Tmin, target_frac)
     
-    queueControl = LmaxQueueController()
+    queueControl = CongestionAwareLmaxQueueController()
 
     TLnet = generateL.getTLobjects(netFile_filepath)
     ICcontainer = intersectionControllerContainer(TLnet, timer, queueControl)
-
-    y = [[0] for x in range(4)]
-    print(y)
-    z = [[0] for x in range(4)]
-    print(z)
-    linkIndex = [0,3,6,9]
     
     # run the simulation
     while step == 0 or traci.simulation.getMinExpectedNumber() > 0:
@@ -379,3 +428,5 @@ if __name__ == "__main__":
         
         step += stepLength
     
+    traci.close()
+    sys.stdout.flush()

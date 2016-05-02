@@ -79,7 +79,9 @@ class TLjunction:
     def __init__(self, juncID, incLanes, intLanes, requests_responseMatrix, requests_foesMatrix, requests_cont):
         self._id = juncID
         self._incLanes = incLanes
+        self._outLanes = []
         self._intLanes = intLanes
+        
         self._numRequests = len(intLanes)
         
         self._requests_responseMatrix = requests_responseMatrix
@@ -89,7 +91,6 @@ class TLjunction:
         self._TLconnections = {}
         self._edge2lanes = {}
         self._incLane2indexes = {}
-        self._outLanes = {}
         self._outLane2indexes = {}
         
         self._directions = []
@@ -422,6 +423,7 @@ class TLobjects:
         for juncTarget in self._TLjunctions:    
             self._TLjunctions[juncTarget].setEdge2Lanes()
             self._TLjunctions[juncTarget].setIncLanes2Indexes()
+            self._TLjunctions[juncTarget].setOutLanes()
             self._TLjunctions[juncTarget].setOutLanes2Indexes()
             self._TLjunctions[juncTarget].setIndex2dirs()
             self._TLjunctions[juncTarget].findCompatibleFlows_variablePriorityModel()
