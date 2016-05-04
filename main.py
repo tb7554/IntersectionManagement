@@ -383,10 +383,10 @@ if __name__ == "__main__":
     traciPort = tools.getOpenPort()
 
     target_frac = 1
-    Tmin = 5
-    Tmax = 120
+    Tmin = 20
+    Tmax = 40
     timer = ctrl.minMaxGreenTimeController(Tmin, Tmax, target_frac)
-    # timer = ctrl.PGreenTimeController(0.1, 40, target_frac)
+    #timer = ctrl.PGreenTimeController(0.1, 40, target_frac)
     print(timer)
 
     queueControl = ctrl.CongestionAwareLmaxQueueController()
@@ -410,7 +410,7 @@ if __name__ == "__main__":
     while step == 0 or traci.simulation.getMinExpectedNumber() > 0:
         traci.simulationStep()
         
-        ICcontainer.updateICqueues(stepLength, step)
+        #ICcontainer.updateICqueues(stepLength, step)
 
         #ICcontainer._ICs['0/0'].debug()
 
@@ -424,11 +424,15 @@ if __name__ == "__main__":
     print(tbplot.meanWaitSteps(tripInfoOutput_filepath, stepLength))
     print(tbplot.meanDepartDelay(tripInfoOutput_filepath))
 
-
+    subplot = 0
+    plt.figure(1)
     for junction in ICcontainer._ICs:
-        plt.figure(junction)
+        subplot += 1
         for lane in ICcontainer._ICs[junction]._Gt_changeStep:
+            plotstring = int("2"+"2"+str(subplot))
+            plt.subplot(plotstring)
             if ICcontainer._ICs[junction]._Gt_changeStep[lane]:
                 plt.plot(ICcontainer._ICs[junction]._Gt_changeStep[lane], ICcontainer._ICs[junction]._Gt_historical[lane], hold=True)
+            plt.title(junction)
 
     plt.show()
