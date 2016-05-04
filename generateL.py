@@ -2,8 +2,6 @@
 from __future__ import print_function
 import numpy as np
 import xml.etree.cElementTree as ET
-import operator
-import functools
 
 class TLSlogic:
     '''Stores Traffic Light logic from the net file'''
