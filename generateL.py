@@ -108,7 +108,10 @@ class TLjunction:
         to = ETconn.attrib['to']
         fromLane = ETconn.attrib['fromLane']
         toLane = ETconn.attrib['toLane']
-        via = ETconn.attrib['via']
+        if 'via' in ETconn.keys():
+            via = ETconn.attrib['via']
+        else:
+            via = None
         tl = ETconn.attrib['tl']
         linkIndex = int(ETconn.attrib['linkIndex'])
         direction = ETconn.attrib['dir']
@@ -406,8 +409,9 @@ class TLobjects:
                 foes = list(request.attrib['foes'])
                 foes.reverse()
                 requests_foes.append(map(int, foes))
-                
-                requests_cont.append(request.attrib['cont'])
+
+                if 'cont' in request.keys():
+                    requests_cont.append(request.attrib['cont'])
             
             requests_responseMatrix = requests_response
             requests_foesMatrix = requests_foes

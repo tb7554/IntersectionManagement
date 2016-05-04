@@ -24,7 +24,7 @@ class minMaxGreenTimeController:
         # Increase green time if too few cars cleared. Decrease green time if too many cars cleared.
         if actual_number_cars_cleared > target_number_cars_cleared:
             Gt_new = (Gt_old + self._Tmin)/2
-        elif actual_number_cars_cleared < actual_number_cars_cleared:
+        elif actual_number_cars_cleared < target_number_cars_cleared:
             Gt_new = (Gt_old + self._Tmax)/2
         else:
             Gt_new = Gt_old
