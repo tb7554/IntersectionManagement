@@ -7,3 +7,6 @@ traci_tls/
 tripsoutput.xml
 .gitignore
 *.ipynb
+*.idea
+netFiles/acosta/
+netFiles/grid2/
