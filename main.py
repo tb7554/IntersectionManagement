@@ -410,7 +410,7 @@ if __name__ == "__main__":
     while step == 0 or traci.simulation.getMinExpectedNumber() > 0:
         traci.simulationStep()
         
-        #ICcontainer.updateICqueues(stepLength, step)
+        ICcontainer.updateICqueues(stepLength, step)
 
         #ICcontainer._ICs['0/0'].debug()
 
