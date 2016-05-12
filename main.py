@@ -40,6 +40,8 @@ class intersectionController:
         # Current values for dynamic properties
         self._currentQindex = 0
         self._currentOpenQueues = self._L[self._currentQindex,0:]
+        self._currentOpenIndexes = np.nonzero(self._currentOpenQueues)[0]
+        self._currentOpenLanes = []
         self._currentPhaseString = "".join(self._Lstrings[0]) # Initialise light settings as all red (will change in the first step of the simulation
         
         # Values to track important variables and state changes
@@ -56,6 +58,18 @@ class intersectionController:
         self._As = [0]*numQueues
         self._Acompare = 0
         self._Bcompare = 0
+
+        self._BperStep = {}
+        self._lambda_per_step = {}
+        self._mu = {}
+        self._lambda = {}
+
+        # self._mu_G_minute = mus[0] # mean car exit rate
+        # self._lambda_G_minute = lams[0] # mean car entry rate
+        # self._mu_G_hour = mus[1]  # mean car exit rate
+        # self._lambda_G_hour = lams[1]  # mean car entry rate
+        # self._mu_G_year = mus[2]
+        # self._lambda_G_year = lams[2]
         
         self._vehList_k0 = {}
         self._vehList_kGt = {}
@@ -63,6 +77,10 @@ class intersectionController:
         self._Gt_historical = {}
         
         for lane in self.getIncLanes():
+            self._mu.update({lane:0})
+            self._lambda.update({lane:0})
+            self._BperStep.update({lane:[]})
+            self._lambda_per_step.update({lane:[]})
             self._vehList_k0.update({lane:[]})
             self._Gt_changeStep.update({lane:[]})
             self._Gt_historical.update({lane:[]})
@@ -104,10 +122,9 @@ A : %s""" % (float(self._currentQindex), self._currentOpenQueues, str(self._curr
             self._vehList_kGt.update({lane:vehList})
 
     def updateGtRecords(self, index, timeStep, Gt):
-        lanes = self._index2incLane[index]
-        for lane in lanes:
-            self._Gt_changeStep[lane].append(timeStep)
-            self._Gt_historical[lane].append(Gt)
+        lane = self._index2incLane[index]
+        self._Gt_changeStep[lane].append(timeStep)
+        self._Gt_historical[lane].append(Gt)
     
     def setCongestedLanes2Red(self):
         for ii in range(self._numQueues):
@@ -157,29 +174,50 @@ A : %s""" % (float(self._currentQindex), self._currentOpenQueues, str(self._curr
                 self._Cs[index] = spaces_total - vehCount
 
     def updateBcompare(self):
+        global stepWindow4MuAndLambda
         """Updates the actual number of vehicles removed from the queue"""
         # Identify only individual vehicles removed from the queue, that were there at the start
         # Compare the vehicles at the start to the vehicles at the end
 
         # Initialise a counter
 
-        for lane in self.getIncLanes():
-            # Get the indexes assigned to the current lane
-            indexes = self.getIndexesFromIncLane(lane)
-            # Get the number of indexes
-            num_indexes_assigned_to_lane = len(indexes)
-
+        for lane in self._currentOpenLanes:
             # Get the final count (current vehicles in the lane)
             endCount = traci.lane.getLastStepVehicleIDs(lane)
             # Get the number of vehicles at the start of the green time
             startCount = self._vehList_k0[lane]
 
             # if a vehicle there at the start is not longer there, then increase the count by 1
+            BperStep = 0
+            lambda_per_step = 0
             for veh in startCount:
-                if veh not in endCount : self._Bcompare += 1
+                if veh not in endCount:
+                    self._Bcompare += 1
+                    BperStep += 1
+
+            for veh in endCount:
+                if veh not in startCount:
+                    lambda_per_step += 1
+
+            self._BperStep[lane].append(BperStep)
+            if len(self._BperStep[lane])>stepWindow4MuAndLambda:
+                alpha_mu = self._BperStep[lane].pop(0)
+                omega_mu = BperStep
+                self._mu[lane] = self._mu[lane] + ((omega_mu-alpha_mu)/stepWindow4MuAndLambda)
+            else:
+                self._mu[lane] = ((len(self._BperStep[lane])-1)/len(self._BperStep[lane]))*self._mu[lane] + (1/len(self._BperStep[lane]))*BperStep
+
+            self._lambda_per_step[lane].append(lambda_per_step)
+            if len(self._lambda_per_step)>stepWindow4MuAndLambda:
+                alpha_lam = self._lambda_per_step[lane].pop(0)
+                omega_lam = lambda_per_step
+                self._lambda[lane] = self._lambda[lane] + ((omega_lam - alpha_lam) / stepWindow4MuAndLambda)
+            else:
+                self._lambda[lane] = ((len(self._lambda_per_step[lane]) - 1) / len(self._lambda_per_step[lane])) * self._lambda[lane] + 1 / len(self._lambda_per_step[lane]) * lambda_per_step
 
             # Update the list of vehicles at the intersection to be compared next time.
             self._vehList_k0[lane] = endCount
+
 
     def resetB(self):
         self._Bcompare = 0
@@ -187,8 +225,7 @@ A : %s""" % (float(self._currentQindex), self._currentOpenQueues, str(self._curr
     def updateGreenTime(self, step):
         """Updates the green time for the current queue
         (which will be used next time the queue receives a green light) using the timer algorithm"""
-        Gt_current = self._queueGreenTimes[self._currentQindex]
-        Gt_new = self._timerControl.getNewGreenTime(self._Acompare, self._Bcompare, Gt_current)
+        Gt_new = self._timerControl.getNewGreenTime(self)
 
         elements_to_update = self._L[self._currentQindex][0:]
 
@@ -203,10 +240,14 @@ A : %s""" % (float(self._currentQindex), self._currentOpenQueues, str(self._curr
         self._As = (map(lambda x : x*self._x_star, self.getXs()))
         self._Acompare = np.sum(np.multiply(self._As, self._currentOpenQueues))
 
-
     def chooseQueues2Release(self):
         self._currentQindex = self._queueControl.bestQueueSet(self)
         self._currentOpenQueues = self._L[self._currentQindex]
+        self._currentOpenIndexes = np.nonzero(self._currentOpenQueues)[0]
+        self._currentOpenLanes = []
+        for index in self._currentOpenIndexes:
+            lane = self.getIncLaneFromIndex(index)
+            if lane not in self._currentOpenLanes : self._currentOpenLanes.append(lane)
 
     def setGreenTimer(self):
         self._greenTimer = self._queueGreenTimes[self._currentQindex]
@@ -261,6 +302,7 @@ A : %s""" % (float(self._currentQindex), self._currentOpenQueues, str(self._curr
         # Else if the traffic light is in the green phase and the green timer has reached zero. Update all variables
         # and calculate the new green time and phase. Then switch into the amber phase.
         elif self._state and self._greenTimer <= 0:
+                # ORDER IS IMPORTANT IN THIS SECTION. DO NOT REORDER WITHOUT FULL UNDERSTANDING OF THE CHANGES TO OBJECT PROPERTIES.
                 # Update the queue lengths at each link
                 self.updateQueues()
                 # Update the capacities of each exit lane
@@ -280,7 +322,6 @@ A : %s""" % (float(self._currentQindex), self._currentOpenQueues, str(self._curr
 
                 # Update the green timer according to the queues to be unlocked
                 self.setGreenTimer()
-
                 # Update the green string according to the queue
                 self.setGreenString()
 
@@ -306,11 +347,20 @@ A : %s""" % (float(self._currentQindex), self._currentOpenQueues, str(self._curr
             print("Something wrong in update phase logic")
 
     def debug(self):
-        print(self.__repr__)
+        print(self._queueGreenTimes)
 
     # Get functions
     def getXs(self):
         return self._Xs
+
+    def getAcompare(self):
+        return self._Acompare
+
+    def getBcompare(self):
+        return self._Bcompare
+
+    def getGt_current(self):
+        return self._queueGreenTimes[self._currentQindex]
     
     def getIncLanes(self):
         return self._incLanes
@@ -327,6 +377,9 @@ A : %s""" % (float(self._currentQindex), self._currentOpenQueues, str(self._curr
     def getIndexesFromIncLane(self, lane):
         return self._incLanes2index[lane]
 
+    def getIncLaneFromIndex(self, index):
+        return self._index2incLane[index]
+
     def getIndexesFromOutLane(self, lane):
         return self._outLanes2index[lane]
     
@@ -341,7 +394,17 @@ A : %s""" % (float(self._currentQindex), self._currentOpenQueues, str(self._curr
     
     def getVehList_kGt_forLane(self, lane):
         return self._vehList_kGt[lane]
-        
+
+    def getLambda(self, lane):
+        return self._lambda[lane]
+
+    def getMu(self, lane):
+        return self._mu[lane]
+
+    def getCurrentOpenLanes(self):
+        return self._currentOpenLanes
+
+
 class intersectionControllerContainer:
     
     def __init__(self, TLJuncsContainer, x_star, timerControl, queueControl):
@@ -382,11 +445,15 @@ if __name__ == "__main__":
 
     traciPort = tools.getOpenPort()
 
-    target_frac = 1
-    Tmin = 20
-    Tmax = 40
-    timer = ctrl.minMaxGreenTimeController(Tmin, Tmax, target_frac)
-    #timer = ctrl.PGreenTimeController(0.1, 40, target_frac)
+    timeWindow4MuAndLambda = 600
+    stepWindow4MuAndLambda = (1/stepLength)*timeWindow4MuAndLambda
+
+    target_frac = 0.5
+    Tmin = 10
+    Tmax = 300
+    #timer = ctrl.minMaxGreenTimeController(Tmin, Tmax)
+    #timer = ctrl.PGreenTimeController(0.1, 40)
+    timer = ctrl.modelBasedController(Tmin, Tmax)
     print(timer)
 
     queueControl = ctrl.CongestionAwareLmaxQueueController()
@@ -407,12 +474,12 @@ if __name__ == "__main__":
     step = 0
 
     # run the simulation
-    while step == 0 or traci.simulation.getMinExpectedNumber() > 0:
+    while step < 0 or traci.simulation.getMinExpectedNumber() > 0:
         traci.simulationStep()
         
         ICcontainer.updateICqueues(stepLength, step)
 
-        #ICcontainer._ICs['0/0'].debug()
+        ICcontainer._ICs['0/0'].debug()
 
         step += stepLength
     
@@ -420,19 +487,34 @@ if __name__ == "__main__":
     sys.stdout.flush()
     
     sumoProcess.wait()
-    
+
+    # fig = plt.figure(1)
+    # x = len(y1)
+    # plt.plot(x,y1, hold=True)
+    # plt.plot(x, y2, hold=True)
+    # plt.plot(x, y3, hold=True)
+    # plt.plot(x, y4, hold=True)
+    #
+    # fig = plt.figure(2)
+    # plt.plot(x, y5, hold=True)
+    # plt.plot(x, y6, hold=True)
+    # plt.plot(x, y7, hold=True)
+    # plt.plot(x, y8, hold=True)
+
+    plt.show()
+
     print(tbplot.meanWaitSteps(tripInfoOutput_filepath, stepLength))
     print(tbplot.meanDepartDelay(tripInfoOutput_filepath))
 
-    subplot = 0
-    plt.figure(1)
-    for junction in ICcontainer._ICs:
-        subplot += 1
-        for lane in ICcontainer._ICs[junction]._Gt_changeStep:
-            plotstring = int("2"+"2"+str(subplot))
-            plt.subplot(plotstring)
-            if ICcontainer._ICs[junction]._Gt_changeStep[lane]:
-                plt.plot(ICcontainer._ICs[junction]._Gt_changeStep[lane], ICcontainer._ICs[junction]._Gt_historical[lane], hold=True)
-            plt.title(junction)
-
-    plt.show()
+    # subplot = 0
+    # plt.figure(1)
+    # for junction in ICcontainer._ICs:
+    #     subplot += 1
+    #     for lane in ICcontainer._ICs[junction]._Gt_changeStep:
+    #         plotstring = int("2"+"2"+str(subplot))
+    #         plt.subplot(plotstring)
+    #         if ICcontainer._ICs[junction]._Gt_changeStep[lane]:
+    #             plt.plot(ICcontainer._ICs[junction]._Gt_changeStep[lane], ICcontainer._ICs[junction]._Gt_historical[lane], hold=True)
+    #         plt.title(junction)
+    #
+    # plt.show()

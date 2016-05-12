@@ -4,11 +4,10 @@ import numpy as np
 
 class minMaxGreenTimeController:
     
-    def __init__(self, Tmin, Tmax, x_star):
+    def __init__(self, Tmin, Tmax):
         """ Controller that uses basic Tmin and Tmax to adjust green time """
         self._Tmin = Tmin
         self._Tmax = Tmax
-        self._x_star = x_star
         self._initialGreenTime = (Tmax+Tmin)/2
         
     def __repr__(self):
@@ -18,8 +17,12 @@ class minMaxGreenTimeController:
         """ Calculates the intial green time that all lights start with """
         return self._initialGreenTime
         
-    def getNewGreenTime(self, target_number_cars_cleared, actual_number_cars_cleared, Gt_old):
+    def getNewGreenTime(self, IC):
         """ Takes the target number of vehicles to remove from the queue, compares withe the actual number. Returns updated green time."""
+
+        target_number_cars_cleared = IC.getAcompare()
+        actual_number_cars_cleared = IC.getBcompare()
+        Gt_old = IC.getGt_current()
 
         # Increase green time if too few cars cleared. Decrease green time if too many cars cleared.
         if actual_number_cars_cleared > target_number_cars_cleared:
@@ -33,10 +36,9 @@ class minMaxGreenTimeController:
     
 class PGreenTimeController:
     
-    def __init__(self, K, G0, x_star):
+    def __init__(self, K, G0):
         """ Controller that uses an estimated error in the green to make adjustments """
         self._K = K
-        self._x_star = x_star
         self._initialGreenTime = G0
         
     def __repr__(self):
@@ -46,8 +48,12 @@ class PGreenTimeController:
         """ Calculates the intial green time that all lights start with """
         return self._initialGreenTime
         
-    def getNewGreenTime(self, target_number_cars_cleared, actual_number_cars_cleared, Gt_old):
+    def getNewGreenTime(self, IC):
         """ Takes the target number of vehicles to remove from the queue, compares withe the actual number. Returns updated green time."""
+
+        target_number_cars_cleared = IC.getAcompare()
+        actual_number_cars_cleared = IC.getBcompare()
+        Gt_old = IC.getGt_current()
 
         if target_number_cars_cleared:
             error = ((target_number_cars_cleared-actual_number_cars_cleared)/target_number_cars_cleared)*Gt_old
@@ -55,6 +61,41 @@ class PGreenTimeController:
             error = 0
 
         return Gt_old + self._K*error
+
+class modelBasedController:
+
+    def __init__(self, Tmin, Tmax):
+        self._Tmin = Tmin
+        self._Tmax = Tmax
+        self._initialGreenTime = (Tmax+Tmin)/2
+
+    def __repr__(self):
+        return "Uses the model of traffic in flow to calculate green time. Staturates if the values exceed certain limits"
+
+    def getInitialGreenTime(self):
+        return self._initialGreenTime
+
+    def getNewGreenTime(self, IC):
+
+        openLanes = IC.getCurrentOpenLanes()
+        target_number_cars_cleared = IC.getAcompare()
+
+        maxGreenTime = self._Tmin
+        for lane in openLanes:
+            mu = IC.getMu(lane)
+            lam = IC.getLambda(lane)
+
+            try:
+                modelBased_Gt = target_number_cars_cleared/(mu-lam)
+            except ZeroDivisionError:
+                maxGreenTime = self._Tmax
+
+            if modelBased_Gt > self._Tmax : modelBased_Gt = self._Tmax
+
+            if maxGreenTime < modelBased_Gt : maxGreenTime = modelBased_Gt
+
+        return maxGreenTime
+
 
 class LmaxQueueController:
     
