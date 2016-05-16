@@ -8,6 +8,7 @@ import traci  # SUMO API
 import generateL as genL
 import controllers as ctrl
 import numpy as np
+from collections import defaultdict
 
 os.environ["SUMO_HOME"] = "/sumo" # Home directory, stops SUMO using slow web lookups for XML files
 os.environ["SUMO_BINARY"] = "/usr/local/bin/sumo" # binary for SUMO simulations
@@ -58,6 +59,8 @@ class intersectionController:
         self._As = [0]*numQueues
         self._Acompare = 0
         self._Bcompare = 0
+
+        self._lane2A = defaultdict()
 
         self._BperStep = {}
         self._lambda_per_step = {}
@@ -347,7 +350,9 @@ A : %s""" % (float(self._currentQindex), self._currentOpenQueues, str(self._curr
             print("Something wrong in update phase logic")
 
     def debug(self):
-        print(self._queueGreenTimes)
+        pass
+        #print(self._currentOpenLanes)
+        #print(self._timerControl.getNewGreenTime(self))
 
     # Get functions
     def getXs(self):
@@ -479,7 +484,7 @@ if __name__ == "__main__":
         
         ICcontainer.updateICqueues(stepLength, step)
 
-        ICcontainer._ICs['0/0'].debug()
+        ICcontainer._ICs['1/0'].debug()
 
         step += stepLength
     

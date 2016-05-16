@@ -81,18 +81,27 @@ class modelBasedController:
         target_number_cars_cleared = IC.getAcompare()
 
         maxGreenTime = self._Tmin
-        for lane in openLanes:
-            mu = IC.getMu(lane)
-            lam = IC.getLambda(lane)
+        mu = 0
+        lam = 0
 
+        for lane in openLanes:
+            mu += IC.getMu(lane)
+            lam += IC.getLambda(lane)
+
+        if target_number_cars_cleared > 0:
             try:
                 modelBased_Gt = target_number_cars_cleared/(mu-lam)
             except ZeroDivisionError:
                 maxGreenTime = self._Tmax
+        else:
+            modelBased_Gt = self._Tmin
 
-            if modelBased_Gt > self._Tmax : modelBased_Gt = self._Tmax
+        if modelBased_Gt > self._Tmax : modelBased_Gt = self._Tmax
 
-            if maxGreenTime < modelBased_Gt : maxGreenTime = modelBased_Gt
+        if maxGreenTime < modelBased_Gt : maxGreenTime = modelBased_Gt
+
+        if "1/1to1/0_0" in openLanes:
+            print(openLanes, target_number_cars_cleared, mu, lam, modelBased_Gt, maxGreenTime)
 
         return maxGreenTime
 
