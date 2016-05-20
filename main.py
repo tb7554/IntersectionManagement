@@ -443,7 +443,7 @@ if __name__ == "__main__":
         os.environ["SUMO_BINARY"] = "/usr/local/bin/sumo-gui" 
     
     # Input arguments
-    netFile_filepath = "netFiles/grid.net.xml" #sys.argv[1]
+    netFile_filepath = "2LaneGrid.net.xml" #sys.argv[1]
     routeFile_filepath = "netFiles/grid.rou.xml" #sys.argv[2]
     stepLength = 0.1
     tripInfoOutput_filepath = "tripsoutput.xml"

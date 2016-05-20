@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function, division
 import numpy as np
+import random
 
 class minMaxGreenTimeController:
     
@@ -140,3 +141,42 @@ class CongestionAwareLmaxQueueController:
         LdotX = np.dot(Lc, Xs)
         Qmax = np.argmax(LdotX)
         return Qmax
+
+class CongestionDemandOptimisingQueueController:
+
+    def __repr__(self):
+        return """Uses a matrix of the outgoing lanes for each queue, and knowledge of congestion, in order to further
+        optimise the queues to unlock"""
+
+    def calculate_O(self, L_tilda, L):
+        return np.multiply(L_tilda, L)
+
+    def calculate_x_tilda(self, O, x):
+        return np.dot(O, x)
+
+    def bounded_demand(self, x_tilda, capacity_vec):
+        return [max(val) for val in zip(x_tilda,capacity_vec)]
+
+    def demandPerQueue(self, O, x_bounded):
+        return [(x_bounded[ii]/np.sum(O[ii][:])) for ii in x_bounded]
+
+    def bestQueueSet(self, IC):
+
+        L = IC._L
+        L_tilda = IC._L_tilda
+        x = IC._Xs
+        capacity_vec = IC._Cs
+
+        O = self.calculate_O(L_tilda, L)
+        x_tilda = self.calculate_x_tilda(O, x)
+        x_bounded = self.bounded_demand(x_tilda, capacity_vec)
+        x_bounded_per_queue = self.demandPerQueue(O, x_bounded)
+
+        total_demand_bounded_by_capacity = np.dot(L, x_bounded_per_queue)
+
+        best_choices = np.nonzero(total_demand_bounded_by_capacity == np.amax(total_demand_bounded_by_capacity))[0]
+        best_choice = random.choice(best_choices)
+
+        return best_choice
+
+
