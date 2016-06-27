@@ -1,58 +1,102 @@
 from sumolib import net
-import numpy as np
+from collections import defaultdict
 
-net_file = "2LaneGrid.net.xml"
-netObj = net.readNet(net_file, withPrograms=True)
+def print_output(func):
+    def wrapper(*args, **kwargs):
+        output = func(*args, **kwargs)
+        print(func, args, kwargs, output)
+        return output
+    return wrapper
 
-num = 12
+def get_compatible_lanes_matrix_and_phases_from_net_file(net_file):
+    """reads the given net file and returns a dict with TLS ids as the keys and matrices containing the L matrix and
+    the phase settings"""
+    netObj = net.readNet(net_file, withPrograms=True)
 
-output = [0 for _ in range(num)]
-possibilities = []
+    TLS_phases = {}
+    TLS_L = {}
 
-#directions = ['r','s','s','l','r','s','l','r','s','s','l','r','s','l' ]
-directions = ['r','s','l','r','s','l','r','s','l','r','s','l' ]
+    for TLS in netObj._tlss:
 
-TLS_phases = {}
-TLS_L = {}
-TLS_in_lanes = {}
-TLS_out_lanes = {}
+        TLS_ID = TLS.getID()
+
+        phases = []
+        for program in TLS._programs:
+            for phase_settings, _ in TLS._programs[program]._phases:
+                if 'G' in phase_settings and phase_settings not in phases:
+                    phases.append(phase_settings)
+
+        L = []
+        for index, phase in enumerate(phases):
+            L.append([])
+            for letter in list(phase):
+                if letter == 'r':
+                    L[index].append(0)
+                else:
+                    L[index].append(1)
+
+        TLS_phases.update({TLS_ID: phases})
+        TLS_L.update({TLS_ID: L})
+
+    return TLS_L, TLS_phases
+
+def get_in_out_lanes_to_index(net_file):
+    netObj = net.readNet(net_file, withPrograms=True)
+
+    TLS_in_lanes = {}
+    TLS_out_lanes = {}
+
+    for TLS in netObj._tlss:
+
+        TLS_ID = TLS.getID()
+
+        in_entry = ['__' for conn in TLS._connections]
+        out_entry = ['__' for conn in TLS._connections]
+
+        for conn in TLS._connections:
+            in_entry[conn[2]] = conn[0].getID()
+            out_entry[conn[2]] = conn[1].getID()
+
+        TLS_in_lanes.update({TLS_ID: in_entry})
+        TLS_out_lanes.update({TLS_ID: out_entry})
+
+    return TLS_in_lanes, TLS_out_lanes
+
+def get_connection_to_turn_defs(net_file):
+    netObj = net.readNet(net_file, withConnections=True)
+
+    TLS_directions_by_link_index =  defaultdict(dict)
+    TLS_link_index_by_in_lane_and_out_edge = defaultdict(dict)
+
+    for TLS in netObj._tlss:
+
+        directions_by_link_index  = []
+        link_index_by_in_lane_and_out_edge = defaultdict(defaultdict)
+
+        data_tuples = []
+
+        for in_lane, out_lane, link_index in TLS._connections:
+
+            for connection in in_lane._outgoing:
+                link = connection._tlLink
+
+                if link == link_index : data_tuples.append((in_lane, out_lane, link_index, connection._direction))
+
+        data_tuples = sorted(data_tuples, key=lambda entry: entry[2])
+
+        for entry in data_tuples:
+            directions_by_link_index.append(entry[3])
+            link_index_by_in_lane_and_out_edge[entry[0].getID()][entry[1]._edge.getID()] = entry[2]
+
+        TLS_directions_by_link_index[TLS.getID()] = directions_by_link_index
+        TLS_link_index_by_in_lane_and_out_edge[TLS.getID()] = link_index_by_in_lane_and_out_edge
+
+    return TLS_directions_by_link_index, TLS_link_index_by_in_lane_and_out_edge
 
 
-for TLS in netObj._tlss:
 
-    TLS_ID = TLS.getID()
 
-    in_entry = ['__' for conn in TLS._connections]
-    out_entry = ['__' for conn in TLS._connections]
-
-    for conn in TLS._connections:
-
-        in_entry[conn[2]] = conn[0].getID()
-        out_entry[conn[2]] = conn[1].getID()
-
-    TLS_in_lanes.update({TLS_ID : in_entry})
-    TLS_out_lanes.update({TLS_ID : out_entry})
-
-    phases = []
-    for program in TLS._programs:
-        for tuple in netObj._tlss[0]._programs[program]._phases:
-            if 'G' in tuple[0] and tuple[0] not in phases:
-                phases.append(tuple[0])
-
-    L = []
-    for index, phase in enumerate(phases):
-        L.append([])
-        for letter in list(phase):
-            if letter == 'r':
-                L[index].append(0)
-            else:
-                L[index].append(1)
-
-    TLS_phases.update({TLS_ID : phases})
-    TLS_L.update({TLS_ID : L})
-
-print(TLS_L)
-print(TLS_in_lanes)
+get_connection_to_turn_defs('2LaneGrid.net.xml')
 
 
 

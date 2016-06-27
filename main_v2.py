@@ -19,8 +19,8 @@ if __name__ == "__main__":
         os.environ["SUMO_BINARY"] = "/usr/local/bin/sumo-gui" 
     
     # Input arguments
-    netFile_filepath = "netFiles/grid.net.xml" #sys.argv[1]
-    routeFile_filepath = "netFiles/grid.rou.xml" #sys.argv[2]
+    netFile_filepath = "netFiles/acosta/acosta_buslanes_fixed.net.xml" #sys.argv[1]
+    routeFile_filepath = "netFiles/acosta/acosta.rou.xml" #sys.argv[2]
     additional_file = "netFiles/acosta/acosta_vtypes.add.xml"
     step_length = 0.1
     tripInfoOutput_filepath = "tripsoutput.xml"
@@ -38,8 +38,8 @@ if __name__ == "__main__":
     intersection_controller_container.add_intersection_controllers_from_net_file(netFile_filepath, target_frac, timer, queue_control)
 
     # if guiOn: sumoBinary += "-gui" Need an options parser to add this, currently just setting gui to default
-    sumoCommand = ("%s -n %s -r %s --step-length %.2f --tripinfo-output %s --remote-port %d --no-step-log --time-to-teleport -1" % \
-                   (os.environ["SUMO_BINARY"], netFile_filepath, routeFile_filepath, step_length, tripInfoOutput_filepath, traciPort))
+    sumoCommand = ("%s -n %s -r %s -a %s --step-length %.2f --tripinfo-output %s --remote-port %d --no-step-log --time-to-teleport -1 --netstate-dump acosta_dump.xml" % \
+                   (os.environ["SUMO_BINARY"], netFile_filepath, routeFile_filepath, additional_file, step_length, tripInfoOutput_filepath, traciPort))
     sumoProcess = subprocess.Popen(sumoCommand, shell=True, stdout=sys.stdout, stderr=sys.stderr)
     print("Launched process: %s" % sumoCommand)
     
@@ -56,8 +56,6 @@ if __name__ == "__main__":
         intersection_controller_container.update_intersection_controllers(step, step_length)
 
         #intersection_controller_container.print_details('235')
-
-        print(intersection_controller_container._intersection_controller_container['0/0'].get_queue_length_per_link_index())
 
         step += step_length
 
